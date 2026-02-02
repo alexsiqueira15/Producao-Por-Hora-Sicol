@@ -133,7 +133,7 @@ def analisar():
 
     # --- Definições de colunas conforme a equipe ---------------------------
     if equipe == 'variavel':
-        nome_col, cpf_col, operadores_por_turno = 'Nome do operador', 'CPF/CNPJ', variavel_operadores
+        nome_col, cpf_col, operadores_por_turno = 'NOME SOLICITANTE', 'CPF', variavel_operadores
     else:
         return jsonify({'error': 'Equipe inválida.'})
 
