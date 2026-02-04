@@ -31,20 +31,34 @@ def normalize_name(name):
 def read_any_file(file):
     content = file.read()
     file.seek(0)
+    filename = file.filename.lower() if hasattr(file, 'filename') else ''
 
     # 1️⃣ Excel moderno (.xlsx)
+    if filename.endswith('.xlsx'):
+        try:
+            return pd.read_excel(BytesIO(content), engine='openpyxl')
+        except Exception as e:
+            print(f"⚠️ Erro ao ler .xlsx: {e}")
+
+    # 2️⃣ Excel antigo (.xls)
+    if filename.endswith('.xls'):
+        try:
+            return pd.read_excel(BytesIO(content), engine='xlrd')
+        except Exception as e:
+            print(f"⚠️ Erro ao ler .xls: {e}")
+
+    # 3️⃣ Tenta ambos os engines Excel como fallback
     try:
         return pd.read_excel(BytesIO(content), engine='openpyxl')
     except Exception:
         pass
 
-    # 2️⃣ Excel antigo (.xls)
     try:
         return pd.read_excel(BytesIO(content), engine='xlrd')
     except Exception:
         pass
 
-    # 3️⃣ HTML disfarçado de Excel
+    # 4️⃣ HTML disfarçado de Excel
     try:
         tables = pd.read_html(BytesIO(content), encoding='utf-8')
         if tables:
@@ -52,13 +66,13 @@ def read_any_file(file):
     except Exception:
         pass
 
-    # 4️⃣ CSV autodetect
+    # 5️⃣ CSV autodetect
     try:
         return pd.read_csv(BytesIO(content), sep=None, engine='python', encoding='utf-8')
     except Exception:
         pass
 
-    # 5️⃣ TXT tabulado
+    # 6️⃣ TXT tabulado
     try:
         return pd.read_table(BytesIO(content), sep=None, engine='python', encoding='utf-8')
     except Exception:
@@ -171,7 +185,7 @@ def analisar():
             ws.cell(row=row, column=2, value=qtd)
             total_turno += qtd
             row += 1
-        ws.cell(row=row, column=1, value=f"Total: ")
+        ws.cell(row=row, column=1, value="Total:")
         ws.cell(row=row, column=2, value=total_turno)
         row += 2
 
