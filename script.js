@@ -38,14 +38,16 @@ const variavel_operadores = {
     "RECEPTIVO": [
         "LEONICE PAIXAO BATISTA", "EDSON XAVIER DE BRITO", "EDUARDO MOURA SANTOS", "RAINELDES GUILHERME DOS SANTOS"
     ]
-};
+    
+    };
 
-// Função para normalizar nomes
+
+// Normaliza nomes
 function normalizeName(name) {
   return name ? name.toString().trim().toUpperCase() : "";
 }
 
-// Processa o arquivo enviado
+// Processa a planilha
 async function processar() {
   const input = document.getElementById("planilha");
   if (!input.files.length) return alert("Selecione um arquivo!");
@@ -56,9 +58,7 @@ async function processar() {
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const json = XLSX.utils.sheet_to_json(sheet);
 
-  // Contagem de acordos
-  const equipe = document.getElementById("equipe").value;
-  let operadores_por_turno = variavel_operadores;
+  const operadores_por_turno = variavel_operadores;
 
   const resultados = {};
   let totalGeral = 0;
@@ -68,8 +68,7 @@ async function processar() {
     const operadores = operadores_por_turno[turno].map(normalizeName);
 
     operadores.forEach(op => {
-      const count = json.filter(r => normalizeName(r["NOME SOLICITANTE"]) === op)
-                        .length;
+      const count = json.filter(r => normalizeName(r["NOME SOLICITANTE"]) === op).length;
       if (count > 0) {
         resultados[turno][op] = count;
         totalGeral += count;
@@ -78,21 +77,22 @@ async function processar() {
   }
 
   mostrarResultados(resultados, totalGeral);
+  adicionarBotaoDownload(resultados);
 }
 
-// Renderiza os resultados em cards bonitos
+// Renderiza os resultados em cards coloridos
 function mostrarResultados(resultados, totalGeral) {
   const div = document.getElementById("resultado");
-  div.innerHTML = `<div class="alert alert-success fw-bold">✅ Total Geral de Acordos: ${totalGeral}</div>`;
+  div.innerHTML = `<div class="alert alert-success">✅ Total Geral de Acordos: ${totalGeral}</div>`;
 
   for (let turno in resultados) {
     const operadores = resultados[turno];
 
     const card = document.createElement("div");
-    card.className = "turno-card";
+    card.className = `turno-card turno-${turno}`;
 
     const header = document.createElement("div");
-    header.className = "turno-header";
+    header.className = `turno-header turno-${turno}`;
     header.textContent = turno;
     card.appendChild(header);
 
@@ -127,8 +127,46 @@ function mostrarResultados(resultados, totalGeral) {
   }
 }
 
-// Botão Analisar
-document.getElementById("form").addEventListener("submit", async (e) => {
+// Gera Excel
+function gerarExcel(resultados) {
+  const wb = XLSX.utils.book_new();
+
+  for (let turno in resultados) {
+    const operadores = resultados[turno];
+    const data = [["Operador", "Acordos"]];
+
+    for (let op in operadores) {
+      data.push([op, operadores[op]]);
+    }
+
+    const totalTurno = Object.values(operadores).reduce((a,b)=>a+b,0);
+    data.push(["Total do turno", totalTurno]);
+
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    XLSX.utils.book_append_sheet(wb, ws, turno);
+  }
+
+  XLSX.writeFile(wb, "acordos.xlsx");
+}
+
+// Botão de download
+function adicionarBotaoDownload(resultados) {
+  const div = document.getElementById("resultado");
+
+  const btnAntigo = document.getElementById("btnDownload");
+  if (btnAntigo) btnAntigo.remove();
+
+  const btn = document.createElement("button");
+  btn.id = "btnDownload";
+  btn.className = "btn btn-success mt-3";
+  btn.innerHTML = "📥 Baixar Excel";
+  btn.onclick = () => gerarExcel(resultados);
+
+  div.appendChild(btn);
+}
+
+// Evento do botão analisar
+document.getElementById("form").addEventListener("submit", async (e)=>{
   e.preventDefault();
   const btn = document.getElementById("btnAnalisar");
   btn.disabled = true;
