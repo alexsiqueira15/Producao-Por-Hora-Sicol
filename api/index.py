@@ -7,13 +7,18 @@ from unidecode import unidecode
 from io import BytesIO
 import time
 
-app = Flask(__name__)
+# === Flask configurado para Vercel ==========================
+app = Flask(
+    __name__,
+    template_folder="../templates",
+    static_folder="../static"
+)
 
-# === Pasta temporária =====================================================
-TEMP_FOLDER = 'temp_files'
+# === Pasta temporária (filesystem efêmero da Vercel) =======
+TEMP_FOLDER = "/tmp/temp_files"
 os.makedirs(TEMP_FOLDER, exist_ok=True)
 
-# === Função de limpeza automática (arquivos antigos > 1 hora) ============
+# === Função de limpeza automática ==========================
 def limpar_temp_files():
     agora = time.time()
     for f in os.listdir(TEMP_FOLDER):
@@ -21,67 +26,46 @@ def limpar_temp_files():
         if os.path.isfile(caminho) and agora - os.path.getmtime(caminho) > 3600:
             os.remove(caminho)
 
-# === Função para normalizar nomes ========================================
+# === Normalização de nomes =================================
 def normalize_name(name):
     if not isinstance(name, str):
         return ""
     return unidecode(name.strip().upper())
 
-# === Função universal para leitura de qualquer arquivo ===================
+# === Leitura universal de arquivos =========================
 def read_any_file(file):
     content = file.read()
     file.seek(0)
-    filename = file.filename.lower() if hasattr(file, 'filename') else ''
+    filename = file.filename.lower()
 
-    # 1️⃣ Excel moderno (.xlsx)
-    if filename.endswith('.xlsx'):
-        try:
-            return pd.read_excel(BytesIO(content), engine='openpyxl')
-        except Exception as e:
-            print(f"⚠️ Erro ao ler .xlsx: {e}")
-
-    # 2️⃣ Excel antigo (.xls)
-    if filename.endswith('.xls'):
-        try:
-            return pd.read_excel(BytesIO(content), engine='xlrd')
-        except Exception as e:
-            print(f"⚠️ Erro ao ler .xls: {e}")
-
-    # 3️⃣ Tenta ambos os engines Excel como fallback
     try:
-        return pd.read_excel(BytesIO(content), engine='openpyxl')
+        if filename.endswith(".xlsx"):
+            return pd.read_excel(BytesIO(content), engine="openpyxl")
+        if filename.endswith(".xls"):
+            return pd.read_excel(BytesIO(content), engine="xlrd")
     except Exception:
         pass
 
     try:
-        return pd.read_excel(BytesIO(content), engine='xlrd')
+        return pd.read_excel(BytesIO(content), engine="openpyxl")
     except Exception:
         pass
 
-    # 4️⃣ HTML disfarçado de Excel
     try:
-        tables = pd.read_html(BytesIO(content), encoding='utf-8')
+        tables = pd.read_html(BytesIO(content))
         if tables:
             return tables[0]
     except Exception:
         pass
 
-    # 5️⃣ CSV autodetect
     try:
-        return pd.read_csv(BytesIO(content), sep=None, engine='python', encoding='utf-8')
+        return pd.read_csv(BytesIO(content), sep=None, engine="python")
     except Exception:
         pass
 
-    # 6️⃣ TXT tabulado
-    try:
-        return pd.read_table(BytesIO(content), sep=None, engine='python', encoding='utf-8')
-    except Exception:
-        pass
+    raise ValueError("Não foi possível ler o arquivo.")
 
-    raise ValueError("Não foi possível ler o arquivo em nenhum formato suportado.")
-
-
-# === Dicionários de operadores ===========================================
+# === Operadores ============================================
 variavel_operadores = {
     "MANHÃ": [
         "ACLECIO FERNADO MELO", "ALECIA CRISTINA EVYNA SANTOS DE JESUS", "ALISSON BRENO CUNHA DE BARROS",
@@ -123,54 +107,55 @@ variavel_operadores = {
     ]
 }
 
-@app.route('/')
+# === ROTAS ==================================================
+
+@app.route("/")
 def index():
-    return render_template('index.html')
+    return render_template("index.html")
 
-
-@app.route('/analisar', methods=['POST'])
+@app.route("/analisar", methods=["POST"])
 def analisar():
-    limpar_temp_files()  # limpa antes de processar
+    limpar_temp_files()
 
-    if 'planilha' not in request.files:
-        return jsonify({'error': 'Nenhum arquivo enviado.'})
+    if "planilha" not in request.files:
+        return jsonify({"error": "Nenhum arquivo enviado."})
 
-    file = request.files['planilha']
-    equipe = request.form.get('equipe')
-    filename = file.filename.lower()
+    file = request.files["planilha"]
+    equipe = request.form.get("equipe")
 
     try:
         df = read_any_file(file)
-        print(f"✅ Arquivo '{filename}' lido com sucesso.")
     except Exception as e:
-        return jsonify({'error': f'Erro ao ler o arquivo: {str(e)}'})
+        return jsonify({"error": str(e)})
 
-    # --- Definições de colunas conforme a equipe ---------------------------
-    if equipe == 'variavel':
-        nome_col, cpf_col, operadores_por_turno = 'NOME SOLICITANTE', 'CPF', variavel_operadores
-    else:
-        return jsonify({'error': 'Equipe inválida.'})
+    if equipe != "variavel":
+        return jsonify({"error": "Equipe inválida."})
+
+    nome_col = "NOME SOLICITANTE"
+    cpf_col = "CPF"
 
     if nome_col not in df.columns or cpf_col not in df.columns:
-        return jsonify({'error': f'Colunas "{nome_col}" e "{cpf_col}" não encontradas no arquivo.'})
+        return jsonify({"error": "Colunas obrigatórias não encontradas."})
 
-    # --- Normalização de nomes e contagem ----------------------------------
     df[nome_col] = df[nome_col].apply(normalize_name)
-    operadores_por_turno = {t: [normalize_name(o) for o in ops] for t, ops in operadores_por_turno.items()}
+
+    operadores_por_turno = {
+        t: [normalize_name(o) for o in ops]
+        for t, ops in variavel_operadores.items()
+    }
 
     resultados = {}
-    total_acordos = 0
-    for turno, operadores in operadores_por_turno.items():
-        turno_acordos = {}
-        for operador in operadores:
-            df_operador = df[df[nome_col] == operador]
-            acordos = df_operador[cpf_col].nunique()
-            if acordos > 0:
-                turno_acordos[operador] = acordos
-                total_acordos += acordos
-        resultados[turno] = turno_acordos
+    total_geral = 0
 
-    # --- Geração do Excel de resultado -------------------------------------
+    for turno, operadores in operadores_por_turno.items():
+        resultados[turno] = {}
+        for operador in operadores:
+            qtd = df[df[nome_col] == operador][cpf_col].nunique()
+            if qtd > 0:
+                resultados[turno][operador] = qtd
+                total_geral += qtd
+
+    # === Gera Excel =========================================
     wb = Workbook()
     ws = wb.active
     ws.title = "Acordos"
@@ -185,29 +170,26 @@ def analisar():
             ws.cell(row=row, column=2, value=qtd)
             total_turno += qtd
             row += 1
-        ws.cell(row=row, column=1, value="Total:")
+        ws.cell(row=row, column=1, value="Total")
         ws.cell(row=row, column=2, value=total_turno)
         row += 2
 
-    ws.cell(row=row, column=1, value="Total Geral: ")
-    ws.cell(row=row, column=2, value=total_acordos)
+    ws.cell(row=row, column=1, value="TOTAL GERAL")
+    ws.cell(row=row, column=2, value=total_geral)
 
-    # --- Salva arquivo temporário ------------------------------------------
     file_id = str(uuid.uuid4())
     file_path = os.path.join(TEMP_FOLDER, f"{file_id}.xlsx")
     wb.save(file_path)
 
-    return jsonify({'total': total_acordos, 'turnos': resultados, 'file_id': file_id})
+    return jsonify({
+        "total": total_geral,
+        "turnos": resultados,
+        "file_id": file_id
+    })
 
-
-@app.route('/download/<file_id>')
+@app.route("/download/<file_id>")
 def download(file_id):
     file_path = os.path.join(TEMP_FOLDER, f"{file_id}.xlsx")
-    if os.path.exists(file_path):
-        return send_file(file_path, as_attachment=True, download_name="acordos.xlsx")
-    else:
-        return "Arquivo expirado ou não encontrado.", 404
-
-
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    if not os.path.exists(file_path):
+        return "Arquivo expirado.", 404
+    return send_file(file_path, as_attachment=True, download_name="acordos.xlsx")
