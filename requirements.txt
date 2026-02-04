@@ -1,6 +1,0 @@
-flask==2.3.5
-pandas
-openpyxl
-unidecode
-xlrd
-lxml
